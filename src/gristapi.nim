@@ -1,16 +1,11 @@
-# import asyncdispatch, httpclient,
 import strutils, uri, tables, json, strformat
 import std/jsonutils
 import puppy
-# import httpcore
 
 type
-  # GristApi[AsyncHttpClient | * = object
   GristApi* = object
     server*: Uri
     docId*: string
-    # client*: AsyncHttpClient
-    # headers*: HttpHeaders
     headers*: seq[(string, string)]
   # GristValueKind = enum
   #   gvString
@@ -22,6 +17,8 @@ type
   # Row = Table[string, JsonNode]
   Row = JsonNode #Table[string, JsonNode]
   Rows = seq[Row]
+  Id = int
+  HttpMethod = enum GET, POST
 
 
 proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
@@ -34,32 +31,57 @@ proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
   # result.client.headers = newHttpHeaders(
   result.headers = @[("Authorization", fmt"Bearer {apiKey}")]
 
+
 proc get(grist: GristApi, url: Uri, headers: seq[(string, string)] = @[]): string =
   var combinedHeaders = grist.headers & headers
-  return get($url, combinedHeaders).body
+  let resp = get($url, combinedHeaders)
+  if resp.code != 200:
+    raise newException(ValueError, resp.body)
+  return resp.body
 
 
-# proc addRecords*(grist: GristApi, tableId: string, data: Rows) =
-#   discard
+proc post(grist: GristApi, url: Uri, body = "", headers: seq[(string, string)] = @[]): string =
+  ## TODO this is copy pasted from get
+  var combinedHeaders = grist.headers & headers
+  let resp = post($url, combinedHeaders, body)
+  if resp.code != 200:
+    raise newException(ValueError, resp.body)
+  return resp.body
 
-# proc fetchTable*(grist: GristApi, table: string, filters: Table[string, string]): Rows  =
-#   let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
-#   var url = grist.server / path
-#   echo "#############################"
-#   # echo encodeQuery(%* filters)
-#   # echo $ (%* filters)
-#   echo "#############################"
 
-#   # if filters.len > 0:
-#     # url = url ? filters
+proc addRecords*(grist: GristApi, table: string, data: Rows, noparse = false): seq[Id] =
+  let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
+  var url = grist.server / path
+  url.query = encodeQuery([
+    ("noparse", $noparse)
+  ])
+  var records = %* {"records": []}
+  for row in data:
+    records["records"].add (%* {"fields": row})
+  let respjs = parseJson(grist.post(url, body = $ %* records, headers = @[("Content-Type", "application/json")]))
+  for elem in respjs["records"]:
+    result.add elem["id"].getInt()
 
-#   let body = await (await grist.client.get(url)).body
-#   let js = parseJson(body)
-#   var ret: seq[JsonNode] = @[]
-#   if js.hasKey("records"):
-#     for record in js["records"].getElems():
-#       ret.add record
-#     return ret
+
+proc fetchTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit = 0, sort = ""): Rows  =
+  ## fetches rows from a grist document
+  ## for details how to use this api please consult:
+  ##   https://support.getgrist.com/api/#tag/records
+  let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
+  var url = grist.server / path
+  url.query = encodeQuery([
+    ("filter",$(filter)),
+    ("limit", $limit),
+    ("sort", sort)
+  ])
+  let body = grist.get(url)
+  let js = parseJson(body)
+  var ret: seq[JsonNode] = @[]
+  if js.hasKey("records"):
+    for record in js["records"].getElems():
+      ret.add record
+    return ret
+
 
 proc downloadXLSX*(grist: GristApi): string  =
   ## Download and returns the document as XLSX
@@ -67,11 +89,13 @@ proc downloadXLSX*(grist: GristApi): string  =
   var url = grist.server / path
   return grist.get(url)
 
+
 proc downloadCSV*(grist: GristApi, tableId: string): string  =
   ## Download and returns the document as CSV
   let path = fmt"/api/docs/{grist.docId}/download/csv?tableId={tableId}"
   var url = grist.server / path
   return grist.get(url)
+
 
 proc downloadSQLITE*(grist: GristApi): string  =
   ## Download and returns the document as SQLITE
@@ -83,23 +107,34 @@ proc downloadSQLITE*(grist: GristApi): string  =
 when isMainModule and true:
   import times
   var grist = newGristApi(
-    docId = "kTveggjMFamxzQL7AbFoxu",
-    apiKey = "d17a2270af40484d3592cba694157b9fb720e01a",
-    server = "http://192.168.174.238:8484/"
+    # docId = "kTveggjMFamxzQL7AbFoxu",
+    # apiKey = "d17a2270af40484d3592cba694157b9fb720e01a",
+    # server = "http://192.168.174.238:8484/"
     # server = "http://172.16.3.210:8484/"
-
+    docId = "irtKNL9u3sBr6HCove2iKZ",
+    apiKey = "da073fa6d424d4126e65a8a054a6693de19f485e",
+    server = "http://127.0.0.1:8484/"
   )
 
-  let dateStr = ($now()).replace(":", "-")
+  for row in grist.fetchTable("TODO", %* {"Done": [true]}, limit = 3, sort = "Added"):
+    # echo row
+    echo row["fields"]
 
-  let dataSqlite = grist.downloadSQLITE()
-  writeFile(fmt"gene__{dateStr}.sqlite", dataSqlite)
+  echo grist.addRecords("TODO", @[
+      %* {"Task": "PETER", "Details": "DETAILS!!!"},
+      %* {"Task": "PETER2", "Details": "DETAILS!!!2", "Deadline": "HAHA"}
+    ]
+  )
+  # let dateStr = ($now()).replace(":", "-")
 
-  let dataXLSX = grist.downloadXLSX()
-  writeFile(fmt"gene__{dateStr}.xlsx", dataXLSX)
+  # let dataSqlite = grist.downloadSQLITE()
+  # writeFile(fmt"gene__{dateStr}.sqlite", dataSqlite)
 
-  let dataCSV = grist.downloadCSV("Entries")
-  writeFile(fmt"geneEntries__{dateStr}.csv", dataCSV)
+  # let dataXLSX = grist.downloadXLSX()
+  # writeFile(fmt"gene__{dateStr}.xlsx", dataXLSX)
+
+  # let dataCSV = grist.downloadCSV("Entries")
+  # writeFile(fmt"geneEntries__{dateStr}.csv", dataCSV)
 
 # when isMainModule and false:
 #   var grist = newGristApi(
