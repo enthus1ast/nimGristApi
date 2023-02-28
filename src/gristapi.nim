@@ -1,28 +1,33 @@
 import strutils, uri, tables, json, strformat
 import std/jsonutils
 import puppy
+import sequtils, algorithm, hashes
 
 type
   GristApi* = object
     server*: Uri
     docId*: string
+    apiKey: string
     headers*: seq[(string, string)]
-  # GristValueKind = enum
-  #   gvString
-  #   gvNumber
-  #   gvBool
-  # GristValue = object
-  #   kind: GristValueKind
-  # Row = Table[string, GristValue]
-  # Row = Table[string, JsonNode]
-  Row = JsonNode #Table[string, JsonNode]
-  Rows = seq[Row]
   Id = int
-  HttpMethod = enum GET, POST
+  ModRecord = object
+    id: int
+    fields: JsonNode
 
+proc apiKey*(grist: GristApi): string =
+  return grist.apiKey
+
+proc `apiKey=`*(grist: var GristApi, val: string) =
+  if grist.headers.contains("Authorization"):
+    for hkey, hval in grist.headers.mitems:
+      if hkey == "Authorization":
+        hval = fmt"Bearer {val}"
+  else:
+    grist.headers.add(("Authorization", fmt"Bearer {val}"))
 
 proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
   result.docId = docId
+  result.apiKey = apiKey
   when server is Uri:
     result.server = server
   else:
@@ -31,25 +36,25 @@ proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
   # result.client.headers = newHttpHeaders(
   result.headers = @[("Authorization", fmt"Bearer {apiKey}")]
 
-
-proc get(grist: GristApi, url: Uri, headers: seq[(string, string)] = @[]): string =
+proc request*(grist: GristApi, url: Uri, body = "", headers: seq[(string, string)] = @[], verb: string = "get"): string =
   var combinedHeaders = grist.headers & headers
-  let resp = get($url, combinedHeaders)
+  var req = newRequest($url, verb, combinedHeaders)
+  req.body = body
+  var resp = fetch(req)
   if resp.code != 200:
     raise newException(ValueError, resp.body)
   return resp.body
 
+template get*(grist: GristApi, url: Uri, headers: seq[(string, string)] = @[]): string =
+  grist.request(url, "", headers, "get")
 
-proc post(grist: GristApi, url: Uri, body = "", headers: seq[(string, string)] = @[]): string =
-  ## TODO this is copy pasted from get
-  var combinedHeaders = grist.headers & headers
-  let resp = post($url, combinedHeaders, body)
-  if resp.code != 200:
-    raise newException(ValueError, resp.body)
-  return resp.body
+template post*(grist: GristApi, url: Uri, body: string, headers: seq[(string, string)] = @[]): string =
+  grist.request(url, body, headers, "post")
 
+template patch*(grist: GristApi, url: Uri, body: string, headers: seq[(string, string)] = @[]): string =
+  grist.request(url, body, headers, "patch")
 
-proc addRecords*(grist: GristApi, table: string, data: Rows, noparse = false): seq[Id] =
+proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], noparse = false): seq[Id] =
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
   var url = grist.server / path
   url.query = encodeQuery([
@@ -62,8 +67,46 @@ proc addRecords*(grist: GristApi, table: string, data: Rows, noparse = false): s
   for elem in respjs["records"]:
     result.add elem["id"].getInt()
 
+# proc listTables*(grist: GristApi):
 
-proc fetchTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit = 0, sort = ""): Rows  =
+func genGroupHash(modRecord: ModRecord): Hash =
+  var h = 0.Hash
+  for elem in toSeq(modRecord.fields.keys).sorted(SortOrder.Ascending):
+    h = h !& hash(elem)
+  return !$h
+
+proc modifyRecords*(grist: GristApi, table: string, modRecords: openArray[ModRecord]) =
+  var groups: Table[Hash, seq[ModRecord]]
+  # Since we cannot update records with different keys, we must group them first
+  # then do multiple api calls, one for each group.
+  for modRecord in modRecords:
+    let gh = genGroupHash(modRecord)
+    if not groups.hasKey(gh): groups[gh] = @[]
+    groups[gh].add modRecord
+
+  let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
+  var url = grist.server / path
+  for group in groups.values:
+    var records = %* {"records": []}
+    for modRecord in group:
+      records["records"].add(%* {"id": modRecord.id, "fields": modRecord.fields})
+      echo $records
+    discard grist.patch(url, $records, headers = @[("Content-Type", "application/json")])
+
+
+proc deleteRecords*(grist: GristApi, table: string, ids: openArray[Id]) =
+  # /docs/{docId}/tables/{tableId}/data/delete
+  let path = fmt"/api/docs/{grist.docId}/tables/{table}/data/delete"
+  var url = grist.server / path
+  discard grist.post(url, body = $ %* ids, headers = @[("Content-Type", "application/json")])
+
+
+proc columns*(grist: GristApi, table: string): JsonNode =
+  let path = fmt"/api/docs/{grist.docId}/tables/{table}/columns"
+  var url = grist.server / path
+  return parseJson(grist.get(url))
+
+proc fetchTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit = 0, sort = ""): seq[JsonNode]  =
   ## fetches rows from a grist document
   ## for details how to use this api please consult:
   ##   https://support.getgrist.com/api/#tag/records
@@ -125,6 +168,18 @@ when isMainModule and true:
       %* {"Task": "PETER2", "Details": "DETAILS!!!2", "Deadline": "HAHA"}
     ]
   )
+
+  grist.modifyRecords("TODO", @[
+      ModRecord(id: 4, fields: %* {"Task": "ASD"}),
+      ModRecord(id: 5, fields: %* {"Task": "BBBB", "Details": "DET"}),
+      ModRecord(id: 6, fields: %* {"Task": "BBBB", "Details": "DET", "Deadline": "2022.01.13"}),
+      # ModRecord(id: 2, fields: %* {"Task": "PETER2", "Details": "DETAILS!!!2", "Deadline": "HAHA"})
+    ]
+  )
+
+  # grist.deleteRecords("TODO", [1,2,3])
+  echo grist.columns("TODO")
+
   # let dateStr = ($now()).replace(":", "-")
 
   # let dataSqlite = grist.downloadSQLITE()
