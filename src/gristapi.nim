@@ -67,7 +67,18 @@ proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], noparse = 
   for elem in respjs["records"]:
     result.add elem["id"].getInt()
 
-# proc listTables*(grist: GristApi):
+proc listTable*(grist: GristApi): seq[JsonNode] =
+  ## Returns all the tables, with their fields
+  let path = fmt"/api/docs/{grist.docId}/tables"
+  var url = grist.server / path
+  var respjs = parseJson(grist.get(url))
+  for table in respjs["tables"]:
+    result.add table
+
+proc listTableNames*(grist: GristApi): seq[string] =
+  ## Returns all the table names of the document
+  for table in grist.listTable():
+    result.add table["id"].getStr()
 
 func genGroupHash(modRecord: ModRecord): Hash =
   var h = 0.Hash
@@ -149,6 +160,7 @@ proc downloadSQLITE*(grist: GristApi): string  =
 
 when isMainModule and true:
   import times
+  # import glob
   var grist = newGristApi(
     # docId = "kTveggjMFamxzQL7AbFoxu",
     # apiKey = "d17a2270af40484d3592cba694157b9fb720e01a",
@@ -158,6 +170,11 @@ when isMainModule and true:
     apiKey = "da073fa6d424d4126e65a8a054a6693de19f485e",
     server = "http://127.0.0.1:8484/"
   )
+
+  # var pattern = glob("**")
+  # for name in grist.listTableNames():
+  #   if name.matches(pattern):
+  #     echo name
 
   for row in grist.fetchTable("TODO", %* {"Done": [true]}, limit = 3, sort = "Added"):
     # echo row
@@ -169,13 +186,13 @@ when isMainModule and true:
     ]
   )
 
-  grist.modifyRecords("TODO", @[
-      ModRecord(id: 4, fields: %* {"Task": "ASD"}),
-      ModRecord(id: 5, fields: %* {"Task": "BBBB", "Details": "DET"}),
-      ModRecord(id: 6, fields: %* {"Task": "BBBB", "Details": "DET", "Deadline": "2022.01.13"}),
-      # ModRecord(id: 2, fields: %* {"Task": "PETER2", "Details": "DETAILS!!!2", "Deadline": "HAHA"})
-    ]
-  )
+  # grist.modifyRecords("TODO", @[
+  #     ModRecord(id: 4, fields: %* {"Task": "ASD"}),
+  #     ModRecord(id: 5, fields: %* {"Task": "BBBB", "Details": "DET"}),
+  #     ModRecord(id: 6, fields: %* {"Task": "BBBB", "Details": "DET", "Deadline": "2022.01.13"}),
+  #     # ModRecord(id: 2, fields: %* {"Task": "PETER2", "Details": "DETAILS!!!2", "Deadline": "HAHA"})
+  #   ]
+  # )
 
   # grist.deleteRecords("TODO", [1,2,3])
   echo grist.columns("TODO")
