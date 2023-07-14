@@ -9,6 +9,7 @@ type
     docId*: string
     apiKey: string
     headers*: seq[(string, string)]
+    timeout*: float32 # seconds
   Id = int
   ModRecord = object
     id: int
@@ -28,6 +29,7 @@ proc `apiKey=`*(grist: var GristApi, val: string) =
 proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
   result.docId = docId
   result.apiKey = apiKey
+  result.timeout = 240'f32
   when server is Uri:
     result.server = server
   else:
@@ -39,6 +41,7 @@ proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
 proc request*(grist: GristApi, url: Uri, body = "", headers: seq[(string, string)] = @[], verb: string = "get"): string =
   var combinedHeaders = grist.headers & headers
   var req = newRequest($url, verb, combinedHeaders)
+  req.timeout = grist.timeout
   req.body = body
   var resp = fetch(req)
   if resp.code != 200:
@@ -135,6 +138,14 @@ proc fetchTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit
     for record in js["records"].getElems():
       ret.add record
     return ret
+
+
+proc fetchTableAsTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit = 0, sort = ""): Table[int, JsonNode]  =
+  ## same as fetchTable, but returns a table with
+  ## id -> fields
+  result = initTable[int, JsonNode]()
+  for elem in fetchTable(grist, table, filter, limit, sort):
+    result[elem["id"].getInt] = elem["fields"]
 
 
 proc downloadXLSX*(grist: GristApi): string  =
