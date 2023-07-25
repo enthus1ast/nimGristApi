@@ -2,7 +2,7 @@ Simple rest api client for [grist](https://getgrist.com/).
 
 Examples:
 
-```
+```nim
 import gristapi, json, times, strformat
 
 # Create a new grist api client object.
