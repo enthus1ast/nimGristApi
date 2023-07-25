@@ -12,8 +12,8 @@ type
     timeout*: float32 # seconds
   Id = int
   ModRecord* = object
-    id: int
-    fields: JsonNode
+    id*: int
+    fields*: JsonNode
 
 proc apiKey*(grist: GristApi): string =
   return grist.apiKey
