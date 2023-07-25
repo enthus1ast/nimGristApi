@@ -11,7 +11,7 @@ type
     headers*: seq[(string, string)]
     timeout*: float32 # seconds
   Id = int
-  ModRecord = object
+  ModRecord* = object
     id: int
     fields: JsonNode
 
