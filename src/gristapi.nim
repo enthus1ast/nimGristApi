@@ -58,6 +58,8 @@ template patch*(grist: GristApi, url: Uri, body: string, headers: seq[(string, s
   grist.request(url, body, headers, "patch")
 
 proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], noparse = false): seq[Id] =
+  ## Adds records to the given table.
+  ## The `data` json nodes must be a dict, where the keys correcspond to grist column names
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
   var url = grist.server / path
   url.query = encodeQuery([
@@ -65,11 +67,37 @@ proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], noparse = 
   ])
   var records = %* {"records": []}
   for row in data:
+    if row.kind != JObject:
+      raise newException(ValueError, "rows must be JsonObjects: " & $row)
     records["records"].add (%* {"fields": row})
   let respjs = parseJson(grist.post(url, body = $ %* records, headers = @[("Content-Type", "application/json")]))
   for elem in respjs["records"]:
     result.add elem["id"].getInt()
 
+# proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], mappings: seq[string], noparse = false): seq[Id] =
+#   ## Adds records to the given table.
+#   ## The `data` json nodes can be a list, but you must provide a mapping.
+#   let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
+#   var url = grist.server / path
+#   url.query = encodeQuery([
+#     ("noparse", $noparse)
+#   ])
+#   var records = %* {"records": []}
+#   for row in data:
+#     if row.kind != JArray:
+#       raise newException(ValueError, "a row must be a JsonArray: " & $row)
+#     var j: JsonNode = %* {}
+#     if row.len != mappings.len:
+#       raise newException(ValueError, "row.len and mapping.len must be the same: " & $row)
+#     for idx, mapping in mappings:
+#       j[mapping] = row[idx]
+#     records["records"].add(%* {"fields": j})
+#   let respjs = parseJson(grist.post(url, body = $ %* records, headers = @[("Content-Type", "application/json")]))
+#   for elem in respjs["records"]:
+#     result.add elem["id"].getInt()
+#
+#
+#
 proc listTable*(grist: GristApi): seq[JsonNode] =
   ## Returns all the tables, with their fields
   let path = fmt"/api/docs/{grist.docId}/tables"
