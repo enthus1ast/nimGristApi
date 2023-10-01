@@ -185,8 +185,11 @@ proc downloadXLSX*(grist: GristApi): string  =
 
 proc downloadCSV*(grist: GristApi, tableId: string): string  =
   ## Download and returns the document as CSV
-  let path = fmt"/api/docs/{grist.docId}/download/csv?tableId={tableId}"
+  let path = fmt"/api/docs/{grist.docId}/download/csv"
   var url = grist.server / path
+  url.query = encodeQuery([
+    ("tableId", tableid)
+  ])
   return grist.get(url)
 
 
@@ -196,4 +199,39 @@ proc downloadSQLITE*(grist: GristApi): string  =
   var url = grist.server / path
   return grist.get(url)
 
+proc sql*(grist: GristApi, sql: string): seq[JsonNode] =
+  ## Performs an sql query against the document.
+  ## This internally uses the exposed `get` api endpoint
+  ## For details consult: https://support.getgrist.com/api/#tag/sql
+  let path = fmt"/api/docs/{grist.docId}/sql"
+  var url = grist.server / path
+  url.query = encodeQuery([
+    ("q", sql)
+  ])
+  let body = grist.get(url)
+  let js = parseJson(body)
+  var ret: seq[JsonNode] = @[]
+  if js.hasKey("records"):
+    for record in js["records"].getElems():
+      ret.add record
+    return ret
 
+
+proc sql*(grist: GristApi, sql: string, args: seq[string], timeout = 1000): seq[JsonNode] =
+  ## Performs an sql query against the document.
+  ## This internally uses the exposed `post` api endpoint
+  ## For details consult: https://support.getgrist.com/api/#tag/sql
+  let path = fmt"/api/docs/{grist.docId}/sql"
+  var url = grist.server / path
+  let reqBody = %* {
+    "sql": sql,
+    "args": args,
+    "timeout": timeout
+  }
+  let body = grist.post(url, body = $reqBody, headers = @[("Content-Type", "application/json")])
+  let js = parseJson(body)
+  var ret: seq[JsonNode] = @[]
+  if js.hasKey("records"):
+    for record in js["records"].getElems():
+      ret.add record
+    return ret
