@@ -1,3 +1,5 @@
 *.exe
 backups/
 .~*
+examples/exampleSql.nim
+examples/exampleSql

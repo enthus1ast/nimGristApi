@@ -54,6 +54,8 @@ writeFile(fmt"geneEntries__{dateStr}.csv", dataCSV)
 
 changelog:
 
+- v0.2.6:
+  - Added sql endpoint.
 - v0.2.5:
   - Added examples.
 - v0.2.4:
