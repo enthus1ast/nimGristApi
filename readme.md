@@ -50,7 +50,20 @@ writeFile(fmt"gene__{dateStr}.xlsx", dataXLSX)
 let dataCSV = grist.downloadCSV("Entries")
 writeFile(fmt"geneEntries__{dateStr}.csv", dataCSV)
 
+
+# Readonly sql endpoint
+## The simple get api
+echo grist.sql("select * from TABLE1 where title == 'Foo'")
+echo grist.sql("select startDate from TABLE1 where title == 'Foo'")
+
+## More advanced post api
+echo grist.sql("select startDate from TABLE1 where title == ?", @["Foo"], timeout = 500)
+echo grist.sql("select startDate from TABLE1 where title == 'Foo'", @[], timeout = 500)
+
 ```
+
+
+
 
 changelog:
 
