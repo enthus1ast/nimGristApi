@@ -66,7 +66,8 @@ echo grist.sql("select startDate from TABLE1 where title == 'Foo'", @[], timeout
 
 
 changelog:
-
+- v0.2.7:
+  - Added attachment procs
 - v0.2.6:
   - Added sql endpoint.
 - v0.2.5:
