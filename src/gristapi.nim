@@ -1,6 +1,8 @@
 import strutils, uri, tables, json, strformat
 import std/jsonutils
 import puppy
+export MultipartEntry # for attachment upload
+
 import sequtils, algorithm, hashes
 
 type
@@ -299,14 +301,47 @@ proc attachmentsSaveAllSmart*(grist: GristApi, dir: string, filter: JsonNode = %
   for metadata in grist.attachmentsMetadata(filter, sort, limit):
     grist.attachmentsSaveSmart(metadata["id"].getInt, metadata["fields"], dir)
 
-
-# proc uploadAttachment*(grist: GristApi, files: seq[tuple[filename, content: string]]): seq[JsonNode] =
-proc uploadAttachment*(grist: GristApi, entries: seq[MultipartEntry]): seq[JsonNode] =
+import os
+proc uploadAttachment*(grist: GristApi, entries: seq[MultipartEntry]): seq[int] =
   ## Request Body schema: multipart/form-data
   ## https://{subdomain}.getgrist.com/api/docs/{docId}/attachments
+  ## Low level upload procedure:
+  ##   .. code:
+  ##
+  ##  echo grist.uploadAttachment(@[MultipartEntry(
+  ##    name: "upload",
+  ##    fileName: "test.txt",
+  ##    # contentType: "text/plain", # <- opional
+  ##    payload: "TEST",
+  ##  )])
   let path = fmt"/api/docs/{grist.docId}/attachments"
   let url = grist.server / path
   let (contentType, body) = encodeMultipart(entries)
-  # var headers: HttpHeaders
-  echo grist.post(url, body, @[])
+  let resp = grist.post(url, body, @[("Content-Type", contentType)])
+  let js = parseJson(resp)
+  for id in js:
+    result.add id.getInt()
 
+
+proc uploadAttachment*(grist: GristApi, path: string): int =
+  ## Upload a file from the filesystem
+  let body = readFile(path)
+  return grist.uploadAttachment(@[MultipartEntry(
+    name: "upload",
+    fileName: path.extractFilename,
+    payload: body
+  )])[0]
+
+
+proc attachmentsDeleteAllUnused*(grist: GristApi) =
+  ## *Undocumented api*, that deletes all unused attachments.
+  ## Grist removes unused attachments periodically, so this is not strictly needed
+  ##
+  ## https://community.getgrist.com/t/how-to-upload-images-as-attachment-via-api-with-python/1216/3 
+  ## POST /api/docs/{doc_id}/attachments/removeUnused
+  let path = fmt"/api/docs/{grist.docId}/attachments/removeUnused"
+  let url = grist.server / path
+  let resp = grist.post(url, "")
+
+
+# proc uploadAttachment*(grist: GristApi, files: seq[tuple[filename, content: string]]): seq[JsonNode] =
