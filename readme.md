@@ -60,6 +60,43 @@ echo grist.sql("select startDate from TABLE1 where title == 'Foo'")
 echo grist.sql("select startDate from TABLE1 where title == ?", @["Foo"], timeout = 500)
 echo grist.sql("select startDate from TABLE1 where title == 'Foo'", @[], timeout = 500)
 
+
+# Attachments
+# Upload an attachment
+# Attachments must be first uploaded to the grist document THEN they must be referenced
+let id = grist.uploadAttachment("someFile.png")
+
+# Reference attachment in a cell
+# Use `cellAttachment(id)` or manually via `%* ["L", id]`
+echo grist.addRecords("Table1", @[%* {"A": "AAA", "B": "BBB", "uploads": cellAttachment(id)}])
+
+# Upload and reference in one step
+echo grist.addRecords("Table1", @[%* {"A": "AAA", "B": "BBB", "uploads": cellAttachment(grist.uploadAttachment("someFile.png"))}])
+
+# Get attachments metadata
+echo grist.attachmentsMetadata(id)
+
+# List all attachments
+for metadata in grist.attachmentsMetadata():
+  echo metadata
+
+for metadata in grist.attachmentsMetadata(limit = 10):
+  echo metadata
+
+for file in grist.attachmentsMetadata(filter = %* {"fileName":["someFile.png"]}):
+  echo file
+
+
+# Download one attachment
+echo grist.attachmentsDownload(id) # print the content of "someFile.png"
+echo grist.attachmentsSaveSmart(id, "/tmp/") # saves the attachment to the folder "/tmp/" under its original name
+
+
+# Download all attachments
+grist.attachmentsSaveAllSmart("/tmp/") # saves all attachments 
+
+
+
 ```
 
 

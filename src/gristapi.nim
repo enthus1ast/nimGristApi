@@ -1,7 +1,12 @@
-import strutils, uri, tables, json, strformat
+# For adding values find a good way to encode "GristObjCode" 
+# https://support.getgrist.com/code/enums/GristData.GristObjCode/#list
+
+
+import strutils, uri, tables, json, strformat, os
 import std/jsonutils
+
 import puppy
-export MultipartEntry # for attachment upload
+export MultipartEntry # puppy; for attachment upload
 
 import sequtils, algorithm, hashes
 
@@ -127,7 +132,6 @@ proc modifyRecords*(grist: GristApi, table: string, modRecords: openArray[ModRec
     let gh = genGroupHash(modRecord)
     if not groups.hasKey(gh): groups[gh] = @[]
     groups[gh].add modRecord
-
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
   let url = grist.server / path
   for group in groups.values:
@@ -143,7 +147,6 @@ proc deleteRecords*(grist: GristApi, table: string, ids: openArray[Id]) =
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/data/delete"
   let url = grist.server / path
   discard grist.post(url, body = $ %* ids, headers = @[("Content-Type", "application/json")])
-
 
 proc columns*(grist: GristApi, table: string): JsonNode =
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/columns"
@@ -177,13 +180,11 @@ proc fetchTableAsTable*(grist: GristApi, table: string, filter: JsonNode = %* {}
   for elem in fetchTable(grist, table, filter, limit, sort):
     result[elem["id"].getInt] = elem["fields"]
 
-
 proc downloadXLSX*(grist: GristApi): string  =
   ## Download and returns the document as XLSX
   let path = fmt"/api/docs/{grist.docId}/download/xlsx"
   let url = grist.server / path
   return grist.get(url)
-
 
 proc downloadCSV*(grist: GristApi, tableId: string): string  =
   ## Download and returns the document as CSV
@@ -200,7 +201,6 @@ proc downloadSQLITE*(grist: GristApi): string  =
   let path = fmt"/api/docs/{grist.docId}/download"
   let url = grist.server / path
   return grist.get(url)
-
 
 proc sql*(grist: GristApi, sql: string): seq[JsonNode] =
   ## Performs an sql query against the document.
@@ -275,11 +275,9 @@ proc attachmentsDownload*(grist: GristApi, attachmentId: int): string = # TODO s
   let body = grist.get(url)
   return body
 
-
 proc attachmentsSave*(grist: GristApi, attachmentId: int, path: string) =
   ## saves the attachment on the filesystem as `path`
   writeFile(path, grist.attachmentsDownload(attachmentId))
-
 
 proc attachmentsSaveSmart*(grist: GristApi, attachmentId: int, dir: string) =
   ## saves the attachment in the dir `dir`. This gets the name of the file and stores it with its original name
@@ -288,25 +286,22 @@ proc attachmentsSaveSmart*(grist: GristApi, attachmentId: int, dir: string) =
   let path = $(parseUri(dir) / filename)
   grist.attachmentsSave(attachmentId, path)
 
-
 proc attachmentsSaveSmart*(grist: GristApi, attachmentId: int, metadata: JsonNode, dir: string) =
   ## saves the attachment in the dir `dir`. This gets the name of the file and stores it with its original name
   let filename = metadata["fileName"].getStr()
   let path = $(parseUri(dir) / filename)
   grist.attachmentsSave(attachmentId, path)
 
-
 proc attachmentsSaveAllSmart*(grist: GristApi, dir: string, filter: JsonNode = %* {}, sort: string = "", limit: int = 0) =
   ## saves all attachments in the dir `dir`
   for metadata in grist.attachmentsMetadata(filter, sort, limit):
     grist.attachmentsSaveSmart(metadata["id"].getInt, metadata["fields"], dir)
 
-import os
 proc uploadAttachment*(grist: GristApi, entries: seq[MultipartEntry]): seq[int] =
   ## Request Body schema: multipart/form-data
   ## https://{subdomain}.getgrist.com/api/docs/{docId}/attachments
   ## Low level upload procedure:
-  ##   .. code:
+  ##   ..code:
   ##
   ##  echo grist.uploadAttachment(@[MultipartEntry(
   ##    name: "upload",
@@ -344,4 +339,7 @@ proc attachmentsDeleteAllUnused*(grist: GristApi) =
   let resp = grist.post(url, "")
 
 
+proc cellAttachment*(id: int): JsonNode =
+  ## Use this to reference an attachment as a cell value.
+  return %* ["L", id]
 # proc uploadAttachment*(grist: GristApi, files: seq[tuple[filename, content: string]]): seq[JsonNode] =
