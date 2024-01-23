@@ -19,6 +19,8 @@ type
     headers*: seq[(string, string)]
     timeout*: float32 # seconds
   Id = int
+  TableId = string # the name of the table
+  WebhookId = string # the id of the webhook 
   ModRecord* = object
     id*: int
     fields*: JsonNode
@@ -68,8 +70,10 @@ template post*(grist: GristApi, url: Uri, body: string, headers: seq[(string, st
 template patch*(grist: GristApi, url: Uri, body: string, headers: seq[(string, string)] = @[]): string =
   grist.request(url, body, headers, "patch")
 
+template delete*(grist: GristApi, url: Uri, body: string, headers: seq[(string, string)] = @[]): string =
+  grist.request(url, body, headers, "delete")
 
-proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], noparse = false): seq[Id] =
+proc addRecords*(grist: GristApi, table: TableId, data: seq[JsonNode], noparse = false): seq[Id] =
   ## Adds records to the given table.
   ## The `data` json nodes must be a dict, where the keys correcspond to grist column names
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
@@ -96,7 +100,7 @@ proc listTable*(grist: GristApi): seq[JsonNode] =
     result.add table
 
 
-proc listTableNames*(grist: GristApi): seq[string] =
+proc listTableIds*(grist: GristApi): seq[string] =
   ## Returns all the table names of the document
   for table in grist.listTable():
     result.add table["id"].getStr()
@@ -109,7 +113,7 @@ func genGroupHash(modRecord: ModRecord): Hash =
   return !$h
 
 
-proc modifyRecords*(grist: GristApi, table: string, modRecords: openArray[ModRecord]) =
+proc modifyRecords*(grist: GristApi, table: TableId, modRecords: openArray[ModRecord]) =
   var groups: Table[Hash, seq[ModRecord]]
   # Since we cannot update records with different keys, we must group them first
   # then do multiple api calls, one for each group.
@@ -123,24 +127,23 @@ proc modifyRecords*(grist: GristApi, table: string, modRecords: openArray[ModRec
     var records = %* {"records": []}
     for modRecord in group:
       records["records"].add(%* {"id": modRecord.id, "fields": modRecord.fields})
-      echo $records
     discard grist.patch(url, $records, headers = @[("Content-Type", "application/json")])
 
 
-proc deleteRecords*(grist: GristApi, table: string, ids: openArray[Id]) =
-  # /docs/{docId}/tables/{tableId}/data/delete
+proc deleteRecords*(grist: GristApi, table: TableId, ids: openArray[Id]) =
+  # /docs/{docId}/tables/{TableId}/data/delete
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/data/delete"
   let url = grist.server / path
   discard grist.post(url, body = $ %* ids, headers = @[("Content-Type", "application/json")])
 
 
-proc columns*(grist: GristApi, table: string): JsonNode =
+proc columns*(grist: GristApi, table: TableId): JsonNode =
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/columns"
   let url = grist.server / path
   return parseJson(grist.get(url))
 
 
-proc fetchTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit = 0, sort = ""): seq[JsonNode]  =
+proc fetchTable*(grist: GristApi, table: TableId, filter: JsonNode = %* {}, limit = 0, sort = ""): seq[JsonNode]  =
   ## fetches rows from a grist document
   ## for details how to use this api please consult:
   ##   https://support.getgrist.com/api/#tag/records
@@ -160,7 +163,7 @@ proc fetchTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit
     return ret
 
 
-proc fetchTableAsTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit = 0, sort = ""): Table[int, JsonNode]  =
+proc fetchTableAsTable*(grist: GristApi, table: TableId, filter: JsonNode = %* {}, limit = 0, sort = ""): Table[int, JsonNode]  =
   ## same as fetchTable, but returns a table with
   ## id -> fields
   result = initTable[int, JsonNode]()
@@ -175,12 +178,12 @@ proc downloadXLSX*(grist: GristApi): string  =
   return grist.get(url)
 
 
-proc downloadCSV*(grist: GristApi, tableId: string): string  =
+proc downloadCSV*(grist: GristApi, TableId: string): string  =
   ## Download and returns the document as CSV
   let path = fmt"/api/docs/{grist.docId}/download/csv"
   var url = grist.server / path
   url.query = encodeQuery([
-    ("tableId", tableid)
+    ("TableId", TableId)
   ])
   return grist.get(url)
 
@@ -337,4 +340,62 @@ proc attachmentsDeleteAllUnused*(grist: GristApi) =
 proc cellAttachment*(id: int): JsonNode =
   ## Use this to reference an attachment as a cell value.
   return %* ["L", id]
-# proc uploadAttachment*(grist: GristApi, files: seq[tuple[filename, content: string]]): seq[JsonNode] =
+
+
+## Webhooks
+type
+  WebhookEventTypes* = enum ## Event the webhook will fire on
+    WHadd = "add"
+    WHupdate = "update"
+  WebhookConfig* = object ## The configuration for a new webhook 
+    name*: string
+    memo*: string
+    url*: string # Uri
+    enabled*: bool
+    eventTypes*: seq[WebhookEventTypes]
+    isReadyColumn*: string # string or null # TODO ??
+    tableId*: TableId
+
+proc webhooksGet*(grist: GristApi): JsonNode =
+  ## get a list of all webhooks
+  let path = fmt"/api/docs/{grist.docId}/webhooks"
+  let url = grist.server / path
+  let body = grist.get(url)
+  let js = parseJson(body)
+  return js
+
+
+proc webhookCreate*(grist: GristApi, webhookConfig: WebhookConfig): WebhookId =
+  # TODO can create multiple webhooks
+  ## creates a new webhook
+  ## returns the id of the new webhook
+  let path = fmt"/api/docs/{grist.docId}/webhooks"
+  let url = grist.server / path
+  var body = %* {}
+  body["webhooks"] = %* @[%* {"fields": webhookConfig}]
+  let resp = grist.post(url, $body, headers = @[("Content-Type", "application/json")])
+  let js = resp.parseJson()
+  return js["webhooks"][0]["id"].getStr()
+
+
+proc webhookModify*(grist: GristApi, webhookId: WebhookId, webhookConfig: WebhookConfig) =
+  ## modifies a webhook
+  let path = fmt"/api/docs/{grist.docId}/webhooks/{webhookId}"
+  let url = grist.server / path
+  let body = $ %* webhookConfig
+  let resp = grist.patch(url, body, headers = @[("Content-Type", "application/json")])
+
+
+proc webhookRemove*(grist: GristApi, id: string): bool =
+  ## removes a webhook.
+  ## If returns "true" if sucessfull, false otherwise
+  let path = fmt"/api/docs/{grist.docId}/webhooks/{id}"
+  let url = grist.server / path
+  let resp = grist.delete(url, "")
+
+
+proc webhookRemoveAll*(grist: GristApi) =
+  ## removes all webhooks
+  for js in grist.webhooksGet()["webhooks"]:
+    let id = js["id"].getStr()
+    discard grist.webhookRemove(id)
