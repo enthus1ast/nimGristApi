@@ -10,6 +10,7 @@ export MultipartEntry # puppy; for attachment upload
 
 import sequtils, algorithm, hashes
 
+
 type
   GristApi* = object
     server*: Uri
@@ -22,8 +23,10 @@ type
     id*: int
     fields*: JsonNode
 
+
 proc apiKey*(grist: GristApi): string =
   return grist.apiKey
+
 
 proc `apiKey=`*(grist: var GristApi, val: string) =
   if grist.headers.contains("Authorization"):
@@ -33,6 +36,7 @@ proc `apiKey=`*(grist: var GristApi, val: string) =
   else:
     grist.headers.add(("Authorization", fmt"Bearer {val}"))
 
+
 proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
   result.docId = docId
   result.apiKey = apiKey
@@ -41,9 +45,8 @@ proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
     result.server = server
   else:
     result.server = parseUri(server)
-  # result.client = newAsyncHttpClient()
-  # result.client.headers = newHttpHeaders(
   result.headers = @[("Authorization", fmt"Bearer {apiKey}")]
+
 
 proc request*(grist: GristApi, url: Uri, body = "", headers: seq[(string, string)] = @[], verb: string = "get"): string =
   var combinedHeaders = grist.headers & headers
@@ -55,6 +58,7 @@ proc request*(grist: GristApi, url: Uri, body = "", headers: seq[(string, string
     raise newException(ValueError, resp.body)
   return resp.body
 
+
 template get*(grist: GristApi, url: Uri, headers: seq[(string, string)] = @[]): string =
   grist.request(url, "", headers, "get")
 
@@ -63,6 +67,7 @@ template post*(grist: GristApi, url: Uri, body: string, headers: seq[(string, st
 
 template patch*(grist: GristApi, url: Uri, body: string, headers: seq[(string, string)] = @[]): string =
   grist.request(url, body, headers, "patch")
+
 
 proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], noparse = false): seq[Id] =
   ## Adds records to the given table.
@@ -81,30 +86,7 @@ proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], noparse = 
   for elem in respjs["records"]:
     result.add elem["id"].getInt()
 
-# proc addRecords*(grist: GristApi, table: string, data: seq[JsonNode], mappings: seq[string], noparse = false): seq[Id] =
-#   ## Adds records to the given table.
-#   ## The `data` json nodes can be a list, but you must provide a mapping.
-#   let path = fmt"/api/docs/{grist.docId}/tables/{table}/records"
-#   var url = grist.server / path
-#   url.query = encodeQuery([
-#     ("noparse", $noparse)
-#   ])
-#   var records = %* {"records": []}
-#   for row in data:
-#     if row.kind != JArray:
-#       raise newException(ValueError, "a row must be a JsonArray: " & $row)
-#     var j: JsonNode = %* {}
-#     if row.len != mappings.len:
-#       raise newException(ValueError, "row.len and mapping.len must be the same: " & $row)
-#     for idx, mapping in mappings:
-#       j[mapping] = row[idx]
-#     records["records"].add(%* {"fields": j})
-#   let respjs = parseJson(grist.post(url, body = $ %* records, headers = @[("Content-Type", "application/json")]))
-#   for elem in respjs["records"]:
-#     result.add elem["id"].getInt()
-#
-#
-#
+
 proc listTable*(grist: GristApi): seq[JsonNode] =
   ## Returns all the tables, with their fields
   let path = fmt"/api/docs/{grist.docId}/tables"
@@ -113,16 +95,19 @@ proc listTable*(grist: GristApi): seq[JsonNode] =
   for table in respjs["tables"]:
     result.add table
 
+
 proc listTableNames*(grist: GristApi): seq[string] =
   ## Returns all the table names of the document
   for table in grist.listTable():
     result.add table["id"].getStr()
+
 
 func genGroupHash(modRecord: ModRecord): Hash =
   var h = 0.Hash
   for elem in toSeq(modRecord.fields.keys).sorted(SortOrder.Ascending):
     h = h !& hash(elem)
   return !$h
+
 
 proc modifyRecords*(grist: GristApi, table: string, modRecords: openArray[ModRecord]) =
   var groups: Table[Hash, seq[ModRecord]]
@@ -148,10 +133,12 @@ proc deleteRecords*(grist: GristApi, table: string, ids: openArray[Id]) =
   let url = grist.server / path
   discard grist.post(url, body = $ %* ids, headers = @[("Content-Type", "application/json")])
 
+
 proc columns*(grist: GristApi, table: string): JsonNode =
   let path = fmt"/api/docs/{grist.docId}/tables/{table}/columns"
   let url = grist.server / path
   return parseJson(grist.get(url))
+
 
 proc fetchTable*(grist: GristApi, table: string, filter: JsonNode = %* {}, limit = 0, sort = ""): seq[JsonNode]  =
   ## fetches rows from a grist document
@@ -180,11 +167,13 @@ proc fetchTableAsTable*(grist: GristApi, table: string, filter: JsonNode = %* {}
   for elem in fetchTable(grist, table, filter, limit, sort):
     result[elem["id"].getInt] = elem["fields"]
 
+
 proc downloadXLSX*(grist: GristApi): string  =
   ## Download and returns the document as XLSX
   let path = fmt"/api/docs/{grist.docId}/download/xlsx"
   let url = grist.server / path
   return grist.get(url)
+
 
 proc downloadCSV*(grist: GristApi, tableId: string): string  =
   ## Download and returns the document as CSV
@@ -201,6 +190,7 @@ proc downloadSQLITE*(grist: GristApi): string  =
   let path = fmt"/api/docs/{grist.docId}/download"
   let url = grist.server / path
   return grist.get(url)
+
 
 proc sql*(grist: GristApi, sql: string): seq[JsonNode] =
   ## Performs an sql query against the document.
@@ -275,9 +265,11 @@ proc attachmentsDownload*(grist: GristApi, attachmentId: int): string = # TODO s
   let body = grist.get(url)
   return body
 
+
 proc attachmentsSave*(grist: GristApi, attachmentId: int, path: string) =
   ## saves the attachment on the filesystem as `path`
   writeFile(path, grist.attachmentsDownload(attachmentId))
+
 
 proc attachmentsSaveSmart*(grist: GristApi, attachmentId: int, dir: string) =
   ## saves the attachment in the dir `dir`. This gets the name of the file and stores it with its original name
@@ -286,16 +278,19 @@ proc attachmentsSaveSmart*(grist: GristApi, attachmentId: int, dir: string) =
   let path = $(parseUri(dir) / filename)
   grist.attachmentsSave(attachmentId, path)
 
+
 proc attachmentsSaveSmart*(grist: GristApi, attachmentId: int, metadata: JsonNode, dir: string) =
   ## saves the attachment in the dir `dir`. This gets the name of the file and stores it with its original name
   let filename = metadata["fileName"].getStr()
   let path = $(parseUri(dir) / filename)
   grist.attachmentsSave(attachmentId, path)
 
+
 proc attachmentsSaveAllSmart*(grist: GristApi, dir: string, filter: JsonNode = %* {}, sort: string = "", limit: int = 0) =
   ## saves all attachments in the dir `dir`
   for metadata in grist.attachmentsMetadata(filter, sort, limit):
     grist.attachmentsSaveSmart(metadata["id"].getInt, metadata["fields"], dir)
+
 
 proc uploadAttachment*(grist: GristApi, entries: seq[MultipartEntry]): seq[int] =
   ## Request Body schema: multipart/form-data

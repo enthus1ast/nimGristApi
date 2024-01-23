@@ -3,3 +3,4 @@ backups/
 .~*
 examples/exampleSql.nim
 examples/exampleSql
+src/gristapi
