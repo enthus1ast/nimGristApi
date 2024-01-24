@@ -96,6 +96,35 @@ echo grist.attachmentsSaveSmart(id, "/tmp/") # saves the attachment to the folde
 grist.attachmentsSaveAllSmart("/tmp/") # saves all attachments 
 
 
+## Webhooks
+
+# List all webhooks
+echo grist.webhooksGet()
+
+# Remove all webhooks
+grist.webhookRemoveAll()
+
+# Create a webhook
+# we need to use a `WebhookConfig` for this
+var wh = WebhookConfig()
+wh.name = "abc"
+wh.memo = "foo baa baz"
+wh.url = "http://asdf.com"
+wh.enabled = true
+wh.eventTypes = @[WHadd, WHupdate]
+wh.isReadyColumn = ""
+wh.tableId = "Todo"
+ 
+let id = grist.webhookCreate(wh) # returns the id of the webhook
+echo "Created: ", id
+
+# We can use the id to modify the webhook
+wh.name = "abc update"
+grist.webhookModify(id, wh)
+
+# And also to remove the webhook
+echo grist.webhookRemove(id)
+
 
 ```
 
@@ -103,6 +132,8 @@ grist.attachmentsSaveAllSmart("/tmp/") # saves all attachments
 
 
 changelog:
+- v0.2.8:
+  - Added webhook procs
 - v0.2.7:
   - Added attachment procs
 - v0.2.6:
