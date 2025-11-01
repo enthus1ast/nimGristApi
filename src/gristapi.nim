@@ -39,10 +39,10 @@ proc `apiKey=`*(grist: var GristApi, val: string) =
     grist.headers.add(("Authorization", fmt"Bearer {val}"))
 
 
-proc newGristApi*(docId, apiKey: string, server: Uri | string): GristApi =
+proc newGristApi*(docId, apiKey: string, server: Uri | string, timeout = 240): GristApi =
   result.docId = docId
   result.apiKey = apiKey
-  result.timeout = 240'f32
+  result.timeout = timeout.float32
   when server is Uri:
     result.server = server
   else:
