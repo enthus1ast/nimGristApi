@@ -1,8 +1,8 @@
 # Package
 
-version       = "0.2.6"
+version       = "0.2.7"
 author        = "David Krause"
-description   = "Simple rest api client for grist"
+description   = "Simple rest api client for grist (https://getgrist.com)"
 license       = "MIT"
 srcDir        = "src"
 
