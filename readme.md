@@ -132,6 +132,8 @@ echo grist.webhookRemove(id)
 
 
 changelog:
+- v0.2.9:
+  - Added `timeout` parameter 
 - v0.2.8:
   - Added webhook procs
 - v0.2.7:
